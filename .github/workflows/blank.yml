@@ -1,0 +1,32 @@
+name: Deploy BaseAtomicArbitrage
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  deploy-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: latest
+
+      - name: Run Foundry Tests
+        run: forge test -vvv
+
+      - name: Deploy to Base Mainnet
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          RPC_URL: ${{ secrets.ALCHEMY_BASE_URL }}
+        run: |
+          echo "Deploying contract to Base Mainnet..."
+          forge create --rpc-url $RPC_URL \
+            --private-key $PRIVATE_KEY \
+            src/BaseAtomicArbitrage.sol:BaseAtomicArbitrage \
+            --constructor-args 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143 \
+            --verify
