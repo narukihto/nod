@@ -20,10 +20,14 @@ jobs:
         run: forge test -vvv
 
       - name: Deploy to Base Mainnet
+        env:
+          RPC: ${{ secrets.ALCHEMY_BASE_RPC_URL }}
+          KEY: ${{ secrets.PRIVATE_KEY }}
+          ARG: 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143
         run: |
           echo "Deploying contract to Base Mainnet..."
-          forge create --rpc-url "${{ secrets.ALCHEMY_BASE_RPC_URL }}" \
-            --private-key "${{ secrets.PRIVATE_KEY }}" \
+          forge create --rpc-url "$RPC" \
+            --private-key "$KEY" \
             src/BaseAtomicArbitrage.sol:BaseAtomicArbitrage \
-            --constructor-args 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143 \
+            --constructor-args "$ARG" \
             --verify
