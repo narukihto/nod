@@ -1,11 +1,11 @@
-name: Deploy BaseAtomicArbitrage
+name: Test and Deploy BaseAtomicArbitrage
 
 on:
   push:
     branches: [ "main", "master" ]
 
 jobs:
-  deploy-contract:
+  test-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -16,9 +16,14 @@ jobs:
         with:
           version: latest
 
+      - name: Run Contract Tests
+        run: forge test -vvv --rpc-url "${{ secrets.ALCHEMY_BASE_RPC_URL }}"
+
       - name: Deploy to Base Mainnet
+        if: success()
         run: |
           forge create --rpc-url "${{ secrets.ALCHEMY_BASE_RPC_URL }}" \
             --private-key "${{ secrets.PRIVATE_KEY }}" \
             src/BaseAtomicArbitrage.sol:BaseAtomicArbitrage \
-            --constructor-args 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143
+            --constructor-args 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143 \
+            --broadcast
