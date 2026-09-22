@@ -1,236 +1,230 @@
-// SPDX-License-Identifier: MIT
-pragma solidity >=0.8.10 <0.9.0;
+use alloy::primitives::{address, Address, U256, Bytes};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::signers::local::PrivateKeySigner;
+use alloy::network::EthereumWallet;
+use alloy::sol;
+use alloy::sol_types::SolCall;
+use eyre::Result;
+use futures_util::StreamExt;
+use std::sync::Arc;
 
-interface IERC20 {
-    function balanceOf(address account) external view returns (uint256);
-    function transfer(address recipient, uint256 amount) external returns (bool);
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-    function approve(address spender, uint256 amount) external returns (bool);
-}
-
-interface IFlashLoanRecipient {
-    function receiveFlashLoan(
-        IERC20[] memory tokens,
-        uint256[] memory amounts,
-        uint256[] memory feeAmounts,
-        bytes memory userData
-    ) external;
-}
-
-interface IFlashLoanSimpleReceiver {
-    function executeOperation(
-        address asset,
-        uint256 amount,
-        uint256 premium,
-        address initiator,
-        bytes calldata params
-    ) external returns (bool);
-}
-
-interface IBalancerVault {
-    function flashLoan(
-        IFlashLoanRecipient recipient,
-        IERC20[] memory tokens,
-        uint256[] memory amounts,
-        bytes memory userData
-    ) external;
-}
-
-interface IPool {
-    function flashLoanSimple(
-        address receiverAddress,
-        address asset,
-        uint256 amount,
-        bytes calldata params,
-        uint16 referralCode
-    ) external;
-}
-
-contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
-    address private constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-    address public constant AAVE_POOL = 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5;
-
-    address public owner;                      
-    address public botAddress;                 
-    mapping(address => bool) public whitelistedTargets; 
-
-    modifier onlyAuthorized() {
-        require(msg.sender == owner || msg.sender == botAddress, "Not authorized");
-        _;
+// Define smart contract interfaces and function signatures using Alloy's sol! macro
+sol! {
+    #[sol(rpc)]
+    interface IUniswapV2Pair {
+        function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+        function token0() external view returns (address);
+        function token1() external view returns (address);
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
-        _;
+    #[sol(rpc)]
+    interface IUniswapV3Pool {
+        function slot0() external view returns (uint165 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked);
     }
 
-    receive() external payable {}
-
-    constructor(address _botAddress) {
-        // تعيين عنوانك الحقيقي المالك الأساسي للعقد
-        owner = 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143;
-        botAddress = _botAddress;
-
-        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true;
-        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true;
-        whitelistedTargets[_parseAddress("0x198FEe7650eAC16286848227e24eC0DFA5e51DA5")] = true;
-        whitelistedTargets[_parseAddress("0x327Df1e6de05895D2Ab08513aADD931325260A99")] = true;
-        whitelistedTargets[_parseAddress("0x089A8e0F6fCE8e00138F9b6E7Ff5B2FCC4Ac9D94")] = true;
-        whitelistedTargets[_parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14")] = true;
+    interface IRouterSwap {
+        function swapExactTokensForTokens(
+            uint256 amountIn,
+            uint256 amountOutMin,
+            address[] calldata path,
+            uint256 deadline
+        ) external returns (uint256[] memory amounts);
     }
 
-    function _parseAddress(string memory _a) internal pure returns (address) {
-        bytes memory tmp = bytes(_a);
-        uint160 iaddr = 0;
-        uint160 b1;
-        uint160 b2;
-        for (uint256 i = 2; i < 42; i += 2) {
-            iaddr *= 256;
-            b1 = uint160(uint8(tmp[i]));
-            b2 = uint160(uint8(tmp[i + 1]));
-            if ((b1 >= 97) && (b1 <= 102)) b1 -= 87;
-            else if ((b1 >= 65) && (b1 <= 70)) b1 -= 55;
-            else b1 -= 48;
-            if ((b2 >= 97) && (b2 <= 102)) b2 -= 87;
-            else if ((b2 >= 65) && (b2 <= 70)) b2 -= 55;
-            else b2 -= 48;
-            iaddr += (b1 * 16 + b2);
+    interface IBaseAtomicArbitrage {
+        function triggerBalancerArbitrage(
+            address tokenToBorrow,
+            uint256 loanAmount,
+            bytes calldata swapPathData
+        ) external;
+
+        function triggerAaveArbitrage(
+            address tokenToBorrow,
+            uint256 loanAmount,
+            bytes calldata swapPathData
+        ) external;
+    }
+}
+
+/// Core Proprietary Logic: Preserved completely intact
+#[derive(Debug, Clone)]
+pub struct MachineMetric {
+    pub resonance: f64,
+    pub symmetry_projection: f64,
+    pub energy_scale: f64,
+    pub collapse_threshold: f64,
+}
+
+pub struct CausalCollapseSystem {
+    pub metric: MachineMetric,
+}
+
+impl CausalCollapseSystem {
+    pub fn new(resonance: f64, symmetry_projection: f64, energy_scale: f64, collapse_threshold: f64) -> Self {
+        Self {
+            metric: MachineMetric {
+                resonance,
+                symmetry_projection,
+                energy_scale,
+                collapse_threshold,
+            },
         }
-        return address(iaddr);
     }
 
-    function setTargetWhitelist(address target, bool status) external onlyOwner {
-        whitelistedTargets[target] = status;
+    pub fn evaluate(&mut self, live_price: f64, liquidity: u128) -> bool {
+        // Dynamic resonance & inverse-dimensional symmetry projection math formulas
+        self.metric.resonance = live_price * 0.998 + (liquidity as f64).ln() * 0.001;
+        self.metric.symmetry_projection = 1.0 / (1.0 + (self.metric.resonance - 1.0).abs());
+        self.metric.energy_scale = self.metric.resonance * self.metric.symmetry_projection * 1.5;
+        
+        self.metric.energy_scale >= self.metric.collapse_threshold
     }
+}
 
-    function triggerBalancerArbitrage(
-        address tokenToBorrow, 
-        uint256 loanAmount, 
-        bytes calldata swapPathData 
-    ) external onlyAuthorized {
-        IBalancerVault vault = IBalancerVault(BALANCER_VAULT);
+#[tokio::main]
+async fn main() -> Result<()> {
+    // 1. SETUP SIGNER WALLET & RECOMMENDED FILLERS
+    let private_key = std::env::var("PRIVATE_KEY")
+        .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000000000000000000000000001".to_string());
+    
+    let signer: PrivateKeySigner = private_key.parse()?;
+    let signer_address = signer.address();
+    let wallet = EthereumWallet::from(signer);
 
-        IERC20[] memory tokens = new IERC20[](1);
-        tokens[0] = IERC20(tokenToBorrow); 
+    // Connect to Base network via WSS provider using Alloy with wallet & recommended fillers
+    let rpc_url = std::env::var("BASE_WSS_RPC")
+        .unwrap_or_else(|_| "wss://mainnet.base.org".to_string());
+    
+    println!("[*] Connecting to Base network provider at: {}", rpc_url);
+    let ws = WsConnect::new(rpc_url);
+    let provider = ProviderBuilder::new()
+        .wallet(wallet)
+        .with_recommended_fillers()
+        .connect_ws(ws)
+        .await?;
+    let provider = Arc::new(provider);
 
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = loanAmount;           
+    let mut collapse_system = CausalCollapseSystem::new(1.0, 1.0, 1.0, 1.045);
 
-        uint256 exactBalanceBefore = IERC20(tokenToBorrow).balanceOf(address(this));
+    // Whitelisted DEX targets on Base network
+    let whitelisted_targets: [Address; 6] = [
+        address!("0xcf77A3bA9Aab7D3E44917635033322DF3f564171"),
+        address!("0x2626664c2603336E57B271c5C0b26F421741e481"),
+        address!("0x198FEe7650eAC16286848227e24eC0DFA5e51DA5"),
+        address!("0x327Df1e6de05895D2Ab08513aADD931325260A99"),
+        address!("0x089A8e0F6fCE8e00138F9b6E7Ff5B2FCC4Ac9D94"),
+        address!("0x1b81D678ffb9C0263b24A97847620C99d213eB14"),
+    ];
 
-        bytes memory protectedData = abi.encode(msg.sender, exactBalanceBefore, tokenToBorrow, swapPathData);
-        vault.flashLoan(this, tokens, amounts, protectedData);
-    }
+    let arb_contract_address = address!("0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143");
 
-    function triggerAaveArbitrage(
-        address tokenToBorrow,
-        uint256 loanAmount,
-        bytes calldata swapPathData 
-    ) external onlyAuthorized {
-        uint256 exactBalanceBefore = IERC20(tokenToBorrow).balanceOf(address(this));
-        bytes memory encodedParams = abi.encode(msg.sender, exactBalanceBefore, tokenToBorrow, swapPathData);
+    // Subscribe to new block headers
+    let sub = provider.subscribe_blocks().await?;
+    let mut stream = sub.into_stream();
 
-        IPool(AAVE_POOL).flashLoanSimple(
-            address(this),
-            tokenToBorrow,
-            loanAmount,
-            encodedParams,
-            0
-        );
-    }
+    println!("[*] MEV Bot synced. Listening for real-time blocks on Base...");
 
-    function receiveFlashLoan(
-        IERC20[] memory tokens,
-        uint256[] memory amounts,
-        uint256[] memory feeAmounts,
-        bytes memory userData
-    ) external override {
-        require(msg.sender == BALANCER_VAULT, "Untrusted lender");
+    while let Some(block) = stream.next().await {
+        println!("\n--- Processing New Block: {:?} ---", block.header.number);
 
-        (address originalInitiator, , , bytes memory realSwapPathData) = abi.decode(userData, (address, uint256, address, bytes));
-        require(originalInitiator == owner || originalInitiator == botAddress, "Untrusted original initiator");
+        // Iterate through whitelisted platform targets to fetch live reserves/slot0 dynamically
+        for target in whitelisted_targets.iter() {
+            let pool_contract = IUniswapV2Pair::new(*target, provider.clone());
+            
+            // Attempt to fetch live reserves (skips non-V2 pools gracefully)
+            let reserves_result = pool_contract.getReserves().call().await;
+            if let Ok(reserves) = reserves_result {
+                let reserve0 = reserves.reserve0;
+                let reserve1 = reserves.reserve1;
 
-        IERC20 token = tokens[0]; 
-        uint256 amountToRepay = amounts[0] + feeAmounts[0]; 
+                if reserve0 == 0 || reserve1 == 0 {
+                    continue;
+                }
 
-        _executeUniversalArbitrage(realSwapPathData);
+                // Fetch underlying tokens dynamically
+                let token0 = match pool_contract.token0().call().await {
+                    Ok(t) => t._0,
+                    Err(_) => continue,
+                };
+                let token1 = match pool_contract.token1().call().await {
+                    Ok(t) => t._1,
+                    Err(_) => continue,
+                };
 
-        uint256 balanceAfter = token.balanceOf(address(this));
-        require(balanceAfter >= amountToRepay, "Arbitrage unprofitable");
+                // Calculate live price ratio
+                let live_price = (reserve1 as f64) / (reserve0 as f64);
+                let total_liquidity = reserve0.saturating_add(reserve1);
 
-        require(token.transfer(BALANCER_VAULT, amountToRepay), "Balancer repayment failed");
-    }
+                // 2. EVALUATE THROUGH PROPRIETARY CAUSAL COLLAPSE SYSTEM
+                let is_profitable = collapse_system.evaluate(live_price, total_liquidity);
 
-    function executeOperation(
-        address asset,
-        uint256 amount,
-        uint256 premium,
-        address initiator, 
-        bytes calldata params
-    ) external override returns (bool) {
-        require(msg.sender == AAVE_POOL, "Untrusted Aave pool");
-        require(initiator == address(this) || initiator == owner || initiator == botAddress, "Untrusted initiator");
+                if is_profitable {
+                    println!("[+] Profitable opportunity detected on target: {:?}", target);
+                    println!("[+] Dynamic Borrow Token Selected: {:?}", token0);
 
-        (address originalInitiator, , , bytes memory realSwapPathData) = abi.decode(params, (address, uint256, address, bytes));
-        require(originalInitiator == owner || originalInitiator == botAddress, "Untrusted original initiator");
+                    // 3. VALID DEFI PAYLOADS (REAL ABI ENCODING)
+                    let amount_in = U256::from(100_000_000_000_000_000u64); // 0.1 tokens
+                    let loan_amount = U256::from(1_000_000_000_000_000_000u64); // 1 token flash loan
+                    let amount_out_min = U256::ZERO;
+                    let deadline = U256::from(u64::MAX);
+                    let path = vec![token0, token1];
 
-        IERC20 token = IERC20(asset);
-        uint256 amountToRepay = amount + premium;
+                    // Compile valid DEX swap function call using Alloy's sol! encoding
+                    let swap_call = IRouterSwap::swapExactTokensForTokensCall {
+                        amountIn: amount_in,
+                        amountOutMin: amount_out_min,
+                        path,
+                        deadline,
+                    };
+                    
+                    let encoded_swap_payload: Bytes = swap_call.abi_encode().into();
 
-        _executeUniversalArbitrage(realSwapPathData);
+                    // Package targets and payloads for universal execution
+                    let targets_array = vec![*target];
+                    let payloads_array = vec![encoded_swap_payload];
+                    
+                    let real_swap_path_data = alloy::sol_types::abi::encode(&(targets_array, payloads_array));
 
-        uint256 balanceAfter = token.balanceOf(address(this));
-        require(balanceAfter >= amountToRepay, "Arbitrage unprofitable");
+                    // 2 & 3. ARBITRAGE METHOD CALL, SIMULATION & REAL BROADCAST DISPATCH
+                    let arb_contract = IBaseAtomicArbitrage::new(arb_contract_address, provider.clone());
+                    let tx_builder = arb_contract
+                        .triggerBalancerArbitrage(token0, loan_amount, real_swap_path_data.into())
+                        .from(signer_address);
 
-        token.approve(AAVE_POOL, 0);
-        require(token.approve(AAVE_POOL, amountToRepay), "Aave approve failed");
+                    println!("[*] Simulating Atomic Arbitrage transaction on-chain...");
 
-        return true;
-    }
-
-    function _executeUniversalArbitrage(bytes memory realSwapPathData) internal {
-        if(realSwapPathData.length == 0) return; 
-
-        (address[] memory targets, bytes[] memory payloads) = abi.decode(realSwapPathData, (address[], bytes[]));
-        uint256 length = targets.length;
-
-        require(length == payloads.length, "Length mismatch");
-
-        for (uint256 i = 0; i < length; i++) {
-            address target = targets[i];
-
-            require(target != address(this), "Self-call blocked");
-            require(whitelistedTargets[target], "Target unauthorized");
-
-            (bool success, bytes memory returnData) = target.call(payloads[i]);
-
-            if (!success) {
-                if (returnData.length > 0) {
-                    assembly {
-                        let returndata_size := mload(returnData)
-                        revert(add(returnData, 32), returndata_size)
+                    // Perform on-chain simulation call to check profitability and gas viability
+                    match tx_builder.call().await {
+                        Ok(_) => {
+                            println!("[+] Simulation PASSED. Broadcasting transaction to Base network...");
+                            match tx_builder.send().await {
+                                Ok(pending_tx) => {
+                                    println!("[+] Transaction broadcast successfully! Hash: {:?}", pending_tx.tx_hash());
+                                    match pending_tx.get_receipt().await {
+                                        Ok(receipt) => {
+                                            println!("[+] Transaction confirmed in block: {:?}", receipt.block_number);
+                                        }
+                                        Err(e) => {
+                                            eprintln!("[-] Error retrieving transaction receipt: {:?}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("[-] Failed to broadcast transaction: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[-] Simulation FAILED: {:?}. Skipping execution to protect funds.", e);
+                            continue;
+                        }
                     }
-                } else {
-                    revert("External call failed");
+
+                    break;
                 }
             }
         }
     }
 
-    function withdrawToken(address token) external onlyOwner {
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        require(balance > 0, "No balance");
-        require(IERC20(token).transfer(owner, balance), "Transfer failed");
-    }
-
-    function withdrawETH() external onlyOwner {
-        uint256 balance = address(this).balance;
-        require(balance > 0, "No ETH balance");
-        (bool success, ) = owner.call{value: balance}("");
-        require(success, "ETH Transfer failed");
-    }
-
-    function updateBotAddress(address _newBot) external onlyOwner {
-        botAddress = _newBot;
-    }
+    Ok(())
 }
