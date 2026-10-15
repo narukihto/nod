@@ -1,6 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.10 <0.9.0;
 
+error NotAuthorized();
+error NotOwner();
+error UntrustedLender();
+error UntrustedInitiator();
+error UntrustedOriginalInitiator();
+error UntrustedAavePool();
+error LengthMismatch();
+error SelfCallBlocked();
+error TargetUnauthorized(address target);
+error ExternalCallFailed(bytes reason);
+error ArbitrageUnprofitable(uint256 required, uint256 actual);
+error BalancerRepaymentFailed();
+error AaveApproveFailed();
+error NoBalance();
+error NoEthBalance();
+error TransferFailed();
+error EthTransferFailed();
+
 interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
     function transfer(address recipient, uint256 amount) external returns (bool);
@@ -55,12 +73,12 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
     mapping(address => bool) public whitelistedTargets; 
 
     modifier onlyAuthorized() {
-        require(msg.sender == owner || msg.sender == botAddress, "Not authorized");
+        if (msg.sender != owner && msg.sender != botAddress) revert NotAuthorized();
         _;
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
+        if (msg.sender != owner) revert NotOwner();
         _;
     }
 
@@ -70,8 +88,8 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         owner = 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143;
         botAddress = _botAddress;
 
-        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true; // Uniswap V3 Router
-        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true; // Aerodrome Router
+        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true; 
+        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true; 
         whitelistedTargets[_parseAddress("0x198FEe7650eAC16286848227e24eC0DFA5e51DA5")] = true;
         whitelistedTargets[_parseAddress("0x327Df1e6de05895D2Ab08513aADD931325260A99")] = true;
         whitelistedTargets[_parseAddress("0x089A8e0F6fCE8e00138F9b6E7Ff5B2FCC4Ac9D94")] = true;
@@ -144,10 +162,10 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         uint256[] memory feeAmounts,
         bytes memory userData
     ) external override {
-        require(msg.sender == BALANCER_VAULT, "Untrusted lender");
+        if (msg.sender != BALANCER_VAULT) revert UntrustedLender();
 
         (address originalInitiator, , address tokenBorrowed, bytes memory realSwapPathData) = abi.decode(userData, (address, uint256, address, bytes));
-        require(originalInitiator == owner || originalInitiator == botAddress, "Untrusted original initiator");
+        if (originalInitiator != owner && originalInitiator != botAddress) revert UntrustedOriginalInitiator();
 
         IERC20 token = tokens[0]; 
         uint256 amountToRepay = amounts[0] + feeAmounts[0]; 
@@ -157,9 +175,9 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         _executeUniversalArbitrage(realSwapPathData);
 
         uint256 balanceAfter = token.balanceOf(address(this));
-        require(balanceAfter >= amountToRepay, "Arbitrage unprofitable");
+        if (balanceAfter < amountToRepay) revert ArbitrageUnprofitable(amountToRepay, balanceAfter);
 
-        require(token.transfer(BALANCER_VAULT, amountToRepay), "Balancer repayment failed");
+        if (!token.transfer(BALANCER_VAULT, amountToRepay)) revert BalancerRepaymentFailed();
     }
 
     function executeOperation(
@@ -169,11 +187,11 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         address initiator, 
         bytes calldata params
     ) external override returns (bool) {
-        require(msg.sender == AAVE_POOL, "Untrusted Aave pool");
-        require(initiator == address(this) || initiator == owner || initiator == botAddress, "Untrusted initiator");
+        if (msg.sender != AAVE_POOL) revert UntrustedAavePool();
+        if (initiator != address(this) && initiator != owner && initiator != botAddress) revert UntrustedInitiator();
 
         (address originalInitiator, , address tokenBorrowed, bytes memory realSwapPathData) = abi.decode(params, (address, uint256, address, bytes));
-        require(originalInitiator == owner || originalInitiator == botAddress, "Untrusted original initiator");
+        if (originalInitiator != owner && originalInitiator != botAddress) revert UntrustedOriginalInitiator();
 
         IERC20 token = IERC20(asset);
         uint256 amountToRepay = amount + premium;
@@ -183,15 +201,14 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         _executeUniversalArbitrage(realSwapPathData);
 
         uint256 balanceAfter = token.balanceOf(address(this));
-        require(balanceAfter >= amountToRepay, "Arbitrage unprofitable");
+        if (balanceAfter < amountToRepay) revert ArbitrageUnprofitable(amountToRepay, balanceAfter);
 
         token.approve(AAVE_POOL, 0);
-        require(token.approve(AAVE_POOL, amountToRepay), "Aave approve failed");
+        if (!token.approve(AAVE_POOL, amountToRepay)) revert AaveApproveFailed();
 
         return true;
     }
 
-    // استخدام دالة الـ parseAddress لتجاوز فحص الـ Checksum الصارم للمترجم
     function _approveRouters(address token) internal {
         address uniswapRouter = _parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171");
         address aerodromeRouter = _parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481");
@@ -210,13 +227,13 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         (address[] memory targets, bytes[] memory payloads) = abi.decode(realSwapPathData, (address[], bytes[]));
         uint256 length = targets.length;
 
-        require(length == payloads.length, "Length mismatch");
+        if (length != payloads.length) revert LengthMismatch();
 
         for (uint256 i = 0; i < length; i++) {
             address target = targets[i];
 
-            require(target != address(this), "Self-call blocked");
-            require(whitelistedTargets[target], "Target unauthorized");
+            if (target == address(this)) revert SelfCallBlocked();
+            if (!whitelistedTargets[target]) revert TargetUnauthorized(target);
 
             (bool success, bytes memory returnData) = target.call(payloads[i]);
 
@@ -227,7 +244,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
                         revert(add(returnData, 32), returndata_size)
                     }
                 } else {
-                    revert("External call failed");
+                    revert ExternalCallFailed(returnData);
                 }
             }
         }
@@ -235,15 +252,15 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
 
     function withdrawToken(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
-        require(balance > 0, "No balance");
-        require(IERC20(token).transfer(owner, balance), "Transfer failed");
+        if (balance == 0) revert NoBalance();
+        if (!IERC20(token).transfer(owner, balance)) revert TransferFailed();
     }
 
     function withdrawETH() external onlyOwner {
         uint256 balance = address(this).balance;
-        require(balance > 0, "No ETH balance");
+        if (balance == 0) revert NoEthBalance();
         (bool success, ) = owner.call{value: balance}("");
-        require(success, "ETH Transfer failed");
+        if (!success) revert EthTransferFailed();
     }
 
     function updateBotAddress(address _newBot) external onlyOwner {
