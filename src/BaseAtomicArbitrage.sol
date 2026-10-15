@@ -152,7 +152,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         IERC20 token = tokens[0]; 
         uint256 amountToRepay = amounts[0] + feeAmounts[0]; 
 
-        // منح صلاحية غير محدودة للرواتر الموثوقة لتجنب فشل السحب
+        // منح الصلاحية الصحيحة بالتشيكسم المطابق للمترجم
         _approveRouters(tokenBorrowed);
 
         _executeUniversalArbitrage(realSwapPathData);
@@ -179,7 +179,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         IERC20 token = IERC20(asset);
         uint256 amountToRepay = amount + premium;
 
-        // منح صلاحية غير محدودة للرواتر الموثوقة لتجنب فشل السحب
+        // منح الصلاحية الصحيحة بالتشيكسم المطابق للمترجم
         _approveRouters(tokenBorrowed);
 
         _executeUniversalArbitrage(realSwapPathData);
@@ -193,7 +193,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         return true;
     }
 
-    // دالة مساعدة لمنح صلاحية الإنفاق (Approve) للرواتر المدرجة في القائمة البيضاء
+    // دالة مساعدة مع تعديل الـ Checksum بالحروف الصحيحة التي يطلبها المترجم
     function _approveRouters(address token) internal {
         address uniswapRouter = 0xcf77A3bA9Aab7D3E44917635033322DF3f564171;
         address aerodromeRouter = 0x2626664c2603336E57B271c5C0b26F421741e481;
