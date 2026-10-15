@@ -67,12 +67,11 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
     receive() external payable {}
 
     constructor(address _botAddress) {
-        // تعيين عنوانك الحقيقي المالك الأساسي للعقد
         owner = 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143;
         botAddress = _botAddress;
 
-        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true;
-        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true;
+        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true; // Uniswap V3 Router
+        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true; // Aerodrome Router
         whitelistedTargets[_parseAddress("0x198FEe7650eAC16286848227e24eC0DFA5e51DA5")] = true;
         whitelistedTargets[_parseAddress("0x327Df1e6de05895D2Ab08513aADD931325260A99")] = true;
         whitelistedTargets[_parseAddress("0x089A8e0F6fCE8e00138F9b6E7Ff5B2FCC4Ac9D94")] = true;
@@ -147,11 +146,14 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
     ) external override {
         require(msg.sender == BALANCER_VAULT, "Untrusted lender");
 
-        (address originalInitiator, , , bytes memory realSwapPathData) = abi.decode(userData, (address, uint256, address, bytes));
+        (address originalInitiator, , address tokenBorrowed, bytes memory realSwapPathData) = abi.decode(userData, (address, uint256, address, bytes));
         require(originalInitiator == owner || originalInitiator == botAddress, "Untrusted original initiator");
 
         IERC20 token = tokens[0]; 
         uint256 amountToRepay = amounts[0] + feeAmounts[0]; 
+
+        // منح صلاحية غير محدودة للرواتر الموثوقة لتجنب فشل السحب
+        _approveRouters(tokenBorrowed);
 
         _executeUniversalArbitrage(realSwapPathData);
 
@@ -171,11 +173,14 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         require(msg.sender == AAVE_POOL, "Untrusted Aave pool");
         require(initiator == address(this) || initiator == owner || initiator == botAddress, "Untrusted initiator");
 
-        (address originalInitiator, , , bytes memory realSwapPathData) = abi.decode(params, (address, uint256, address, bytes));
+        (address originalInitiator, , address tokenBorrowed, bytes memory realSwapPathData) = abi.decode(params, (address, uint256, address, bytes));
         require(originalInitiator == owner || originalInitiator == botAddress, "Untrusted original initiator");
 
         IERC20 token = IERC20(asset);
         uint256 amountToRepay = amount + premium;
+
+        // منح صلاحية غير محدودة للرواتر الموثوقة لتجنب فشل السحب
+        _approveRouters(tokenBorrowed);
 
         _executeUniversalArbitrage(realSwapPathData);
 
@@ -186,6 +191,19 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         require(token.approve(AAVE_POOL, amountToRepay), "Aave approve failed");
 
         return true;
+    }
+
+    // دالة مساعدة لمنح صلاحية الإنفاق (Approve) للرواتر المدرجة في القائمة البيضاء
+    function _approveRouters(address token) internal {
+        address uniswapRouter = 0xcf77A3bA9Aab7D3E44917635033322DF3f564171;
+        address aerodromeRouter = 0x2626664c2603336E57B271c5C0b26F421741e481;
+
+        if (whitelistedTargets[uniswapRouter]) {
+            IERC20(token).approve(uniswapRouter, type(uint256).max);
+        }
+        if (whitelistedTargets[aerodromeRouter]) {
+            IERC20(token).approve(aerodromeRouter, type(uint256).max);
+        }
     }
 
     function _executeUniversalArbitrage(bytes memory realSwapPathData) internal {
