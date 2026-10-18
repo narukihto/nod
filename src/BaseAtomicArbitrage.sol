@@ -170,7 +170,8 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         IERC20 token = tokens[0]; 
         uint256 amountToRepay = amounts[0] + feeAmounts[0]; 
 
-        _approveRouters(tokenBorrowed);
+        // منح الموافقات الشاملة لكل من التوكن المستعار (USDC) وتوكن WETH لجميع الراوترات المعتمدة
+        _approveRouters(tokenBorrowed, _parseAddress("0x4200000000000000000000000000000000000006"));
 
         _executeUniversalArbitrage(realSwapPathData);
 
@@ -196,7 +197,8 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         IERC20 token = IERC20(asset);
         uint256 amountToRepay = amount + premium;
 
-        _approveRouters(tokenBorrowed);
+        // منح الموافقات الشاملة لكل من التوكن المستعار و WETH لجميع الراوترات المعتمدة
+        _approveRouters(tokenBorrowed, _parseAddress("0x4200000000000000000000000000000000000006"));
 
         _executeUniversalArbitrage(realSwapPathData);
 
@@ -209,15 +211,22 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         return true;
     }
 
-    function _approveRouters(address token) internal {
+    function _approveRouters(address token1, address token2) internal {
         address uniswapRouter = _parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171");
         address aerodromeRouter = _parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481");
+        address pancakeswapRouter = _parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14");
 
         if (whitelistedTargets[uniswapRouter]) {
-            IERC20(token).approve(uniswapRouter, type(uint256).max);
+            IERC20(token1).approve(uniswapRouter, type(uint256).max);
+            IERC20(token2).approve(uniswapRouter, type(uint256).max);
         }
         if (whitelistedTargets[aerodromeRouter]) {
-            IERC20(token).approve(aerodromeRouter, type(uint256).max);
+            IERC20(token1).approve(aerodromeRouter, type(uint256).max);
+            IERC20(token2).approve(aerodromeRouter, type(uint256).max);
+        }
+        if (whitelistedTargets[pancakeswapRouter]) {
+            IERC20(token1).approve(pancakeswapRouter, type(uint256).max);
+            IERC20(token2).approve(pancakeswapRouter, type(uint256).max);
         }
     }
 
