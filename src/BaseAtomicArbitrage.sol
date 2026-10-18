@@ -88,12 +88,10 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         owner = 0x63Fd24a09B2d8eAa2eb16277B7C3B17512294143;
         botAddress = _botAddress;
 
-        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true; 
-        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true; 
-        whitelistedTargets[_parseAddress("0x198FEe7650eAC16286848227e24eC0DFA5e51DA5")] = true;
-        whitelistedTargets[_parseAddress("0x327Df1e6de05895D2Ab08513aADD931325260A99")] = true;
-        whitelistedTargets[_parseAddress("0x089A8e0F6fCE8e00138F9b6E7Ff5B2FCC4Ac9D94")] = true;
-        whitelistedTargets[_parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14")] = true;
+        whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true; // Uniswap V3 Router
+        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true; // Aerodrome Router
+        whitelistedTargets[_parseAddress("0xcA1F7645EF1077CC178dFb42Cf5d2f840457DDBb")] = true; // BaseSwap Router
+        whitelistedTargets[_parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14")] = true; // PancakeSwap V3 Router
     }
 
     function _parseAddress(string memory _a) internal pure returns (address) {
@@ -170,7 +168,6 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         IERC20 token = tokens[0]; 
         uint256 amountToRepay = amounts[0] + feeAmounts[0]; 
 
-        // منح الموافقات الشاملة لكل من التوكن المستعار (USDC) وتوكن WETH لجميع الراوترات المعتمدة
         _approveRouters(tokenBorrowed, _parseAddress("0x4200000000000000000000000000000000000006"));
 
         _executeUniversalArbitrage(realSwapPathData);
@@ -197,7 +194,6 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         IERC20 token = IERC20(asset);
         uint256 amountToRepay = amount + premium;
 
-        // منح الموافقات الشاملة لكل من التوكن المستعار و WETH لجميع الراوترات المعتمدة
         _approveRouters(tokenBorrowed, _parseAddress("0x4200000000000000000000000000000000000006"));
 
         _executeUniversalArbitrage(realSwapPathData);
@@ -214,6 +210,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
     function _approveRouters(address token1, address token2) internal {
         address uniswapRouter = _parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171");
         address aerodromeRouter = _parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481");
+        address baseswapRouter = _parseAddress("0xcA1F7645EF1077CC178dFb42Cf5d2f840457DDBb");
         address pancakeswapRouter = _parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14");
 
         if (whitelistedTargets[uniswapRouter]) {
@@ -223,6 +220,10 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         if (whitelistedTargets[aerodromeRouter]) {
             IERC20(token1).approve(aerodromeRouter, type(uint256).max);
             IERC20(token2).approve(aerodromeRouter, type(uint256).max);
+        }
+        if (whitelistedTargets[baseswapRouter]) {
+            IERC20(token1).approve(baseswapRouter, type(uint256).max);
+            IERC20(token2).approve(baseswapRouter, type(uint256).max);
         }
         if (whitelistedTargets[pancakeswapRouter]) {
             IERC20(token1).approve(pancakeswapRouter, type(uint256).max);
