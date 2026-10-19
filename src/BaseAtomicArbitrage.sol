@@ -89,7 +89,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
         botAddress = _botAddress;
 
         whitelistedTargets[_parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171")] = true; // Uniswap V3 Router
-        whitelistedTargets[_parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481")] = true; // Aerodrome Router
+        whitelistedTargets[_parseAddress("0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43")] = true; // Aerodrome Official Router (Updated)
         whitelistedTargets[_parseAddress("0xcA1F7645EF1077CC178dFb42Cf5d2f840457DDBb")] = true; // BaseSwap Router
         whitelistedTargets[_parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14")] = true; // PancakeSwap V3 Router
     }
@@ -209,7 +209,7 @@ contract BaseAtomicArbitrage is IFlashLoanRecipient, IFlashLoanSimpleReceiver {
 
     function _approveRouters(address token1, address token2) internal {
         address uniswapRouter = _parseAddress("0xcf77A3bA9Aab7D3E44917635033322DF3f564171");
-        address aerodromeRouter = _parseAddress("0x2626664c2603336E57B271c5C0b26F421741e481");
+        address aerodromeRouter = _parseAddress("0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"); // Updated Official Router
         address baseswapRouter = _parseAddress("0xcA1F7645EF1077CC178dFb42Cf5d2f840457DDBb");
         address pancakeswapRouter = _parseAddress("0x1b81D678ffb9C0263b24A97847620C99d213eB14");
 
