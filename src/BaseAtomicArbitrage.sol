@@ -40,7 +40,8 @@ interface IBalancerV3BatchRouter {
 }
 
 contract BaseAtomicArbitrage {
-    address public constant BALANCER_V3_BATCH_ROUTER = 0x136f1efcc3f8f88516b9e94110d56fdbfb1778d1;
+    // Correct checksummed address for Balancer V3 BatchRouter on Base
+    address public constant BALANCER_V3_BATCH_ROUTER = 0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1;
 
     address public owner;                      
     address public botAddress;                 
@@ -76,23 +77,19 @@ contract BaseAtomicArbitrage {
         uint256 minProfit,
         SwapPathExactAmountIn[] calldata paths
     ) external onlyAuthorized {
-        // 1. Approve BatchRouter to spend the baseToken if needed
         IERC20 token = IERC20(baseToken);
         uint256 balanceBefore = token.balanceOf(address(this));
         
-        // Ensure approval is set for the official BatchRouter
         token.approve(BALANCER_V3_BATCH_ROUTER, initialAmountIn);
 
         uint256 minRequiredOut = initialAmountIn + minProfit;
 
-        // 2. Execute swap through official BatchRouter
         uint256 totalAmountOut = IBalancerV3BatchRouter(BALANCER_V3_BATCH_ROUTER).swapExactIn(
             paths,
-            block.timestamp + 60, // Deadline
+            block.timestamp + 60,
             minRequiredOut
         );
 
-        // 3. Profit Verification & Settlement
         uint256 balanceAfter = token.balanceOf(address(this));
         uint256 netProfit = balanceAfter > balanceBefore ? balanceAfter - balanceBefore : 0;
 
@@ -100,7 +97,6 @@ contract BaseAtomicArbitrage {
             revert ArbitrageUnprofitable(minRequiredOut, totalAmountOut);
         }
 
-        // 4. Send net profit to owner
         if (netProfit > 0) {
             if (!token.transfer(owner, netProfit)) revert TransferFailed();
         }
